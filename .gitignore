@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+
+demo.ipynb
+nohup.out
+cat_dataset.npy
+catfaces.zip
+plots/*
+ckpt/*
