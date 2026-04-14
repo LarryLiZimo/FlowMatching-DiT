@@ -2,77 +2,103 @@
 
 Minimal PyTorch implementation of a Diffusion Transformer (DiT) trained with flow matching on `64x64` cat-face images.
 
-## What This Repo Contains
-
-- `model.py`: DiT model with patch embedding, sinusoidal time embedding, AdaLN conditioning, and transformer blocks.
-- `train.py`: training loop, validation split, sampling, checkpoint saving, and plot generation.
-- `config.py`: central training and model configuration.
-
 ## Dataset
 
 The dataset used for this project is available on [Kaggle: larrylizimoccc/catfaces](https://www.kaggle.com/datasets/larrylizimoccc/catfaces/data).
 
-Training expects a NumPy file at the path set by `Config.data_path`:
-
-- default: `./cat_dataset.npy`
-- shape: `(N, 64, 64, 3)`
-- channel order: RGB
+Download the dataset (unzip it possibly) and set the corresponding path in `config.py`.
 
 ## Setup
 
-Create an environment and install the required packages:
-
-```bash
-uv venv --python=3.11 # newer versions are fine
-
-uv pip install torch numpy matplotlib
-```
-
 If you have not install uv, run:
+
 ```bash
 pip install uv
 ```
 
-If you want GPU training, install a CUDA-enabled PyTorch build that matches your system from the [official PyTorch install page](https://pytorch.org/get-started/locally/).
+Create an environment and install the required packages:
 
-## Configuration
+```bash
+uv venv --python=3.13 # newer versions are fine
 
-Edit `config.py` to change the training setup. Important fields:
+uv pip install torch numpy matplotlib
+```
 
-- `data_path`: path to the `.npy` dataset
-- `batch_size`: training batch size
-- `lr`: learning rate
-- `epochs`: number of epochs
-- `ckpt_dir`: checkpoint output directory
-- `save_ckpt_interval`: checkpoint save frequency
-- `plot_dir`: generated image comparison output directory
-- `save_plot_interval`: sampling / plot save frequency
-
-Note: `img_size` and `in_channels` are fixed for the current dataset and should stay at `64` and `3`.
-
-## Train
-
-Run:
-
+To start training, run:
 ```bash
 python train.py
 ```
 
-During training the script:
+---
 
-- loads the dataset from `Config.data_path`
-- reserves `2 * batch_size` samples for validation
-- trains the DiT to predict the flow target with MSE loss
-- saves checkpoints to `ckpt/`
-- writes generated image comparisons to `plots/`
+## Tutorial: Flow Matching
 
-## Outputs
+### Definitions
 
-- checkpoints: `ckpt/epoch_XXX.pt`
-- sample grids: `plots/comparison_XXX.png`
+| Symbol | Meaning |
+|---|---|
+| **Y** | Target distribution — the dataset of real images |
+| **y ~ Y** | A real image sampled from the dataset |
+| **z ~ N(0, I)** | A noise image sampled from a standard Gaussian, same shape as `y` |
+| **t** | A scalar timestep in `[0, 1]`. `t=0` is pure noise, `t=1` is a real image |
+| **x_t** | The interpolated image at time `t`: `t` percent of the way from `z` to `y` |
+| **v** | Velocity — the constant direction pointing from `z` to `y`, i.e. `v = y - z` |
+| **model(x_t, t)** | Neural network that predicts `v` given the current image and timestep |
 
-## Notes
+---
 
-- Mixed precision uses `bfloat16` autocast.
-- The training step compiles the loss path with `torch.compile`.
-- On an RTX 5090, training takes about 50 minutes.
+### Training
+
+The idea: for every pair `(z, y)`, connect them with a straight line. Any point on that line is `x_t = z + (y - z) * t`. The velocity along a straight line is constant: `v = y - z`. We train the model to predict this velocity from any `(x_t, t)`.
+
+**Algorithm:**
+
+1. Sample `y ~ Y` from the dataset
+2. Sample `z ~ N(0, I)`
+3. Sample `t ~ Uniform(0, 1)`
+4. Interpolate: `x_t = z + (y - z) * t`
+5. Compute target velocity: `v = y - z`
+6. Predict: `v_pred = model(x_t, t)`
+7. Loss: `MSE(v_pred, v)` → backpropagate
+
+```python
+z = torch.randn_like(y)
+t = torch.rand(B, device=device)
+v = y - z
+x_t = z + v * t.view(B, 1, 1, 1)
+v_pred = model(x_t, t)
+loss = F.mse_loss(v_pred, v)
+```
+
+---
+
+### Sampling
+
+The idea: start from `z ~ N(0, I)` at `t=0`. Repeatedly ask the model which direction to move, take a small step, and advance `t`. After `N` steps you arrive at `t=1` — a generated image.
+
+**Algorithm:**
+
+1. Sample initial noise `x ~ N(0, I)`
+2. Set step size `dt = 1 / N`
+3. For `i = 0, 1, ..., N-1`:
+   1. Set `t = i * dt`
+   2. Predict velocity: `v = model(x, t)`
+   3. Step forward: `x = x + v * dt`
+4. Return `x`
+
+```python
+x = torch.randn(B, C, H, W, device=device)
+dt = 1.0 / steps
+for i in range(steps):
+    t = torch.ones(B, device=device) * i * dt
+    v_pred = model(x, t)
+    x = x + v_pred * dt
+```
+
+Because paths are straight, 30 steps is well enough. Diffusion models need hundreds because their paths are curved.
+
+---
+
+### The Model (DiT)
+
+The model is a Diffusion Transformer (DiT). It takes `(x_t, t)` and returns a velocity image of the same shape. The image is patchified into a token sequence and fed into transformer blocks. The timestep `t` is sinusoidally encoded and used to modulate the layer normalization inside each block (AdaLN), so the model's behavior shifts depending on where along the path it is. A final linear layer maps the output tokens back to pixel space.
