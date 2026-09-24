@@ -26,7 +26,7 @@ uv pip install torch numpy matplotlib
 
 To start training, run:
 ```bash
-python train.py
+uv run python train.py
 ```
 
 ---
@@ -95,7 +95,7 @@ for i in range(steps):
     x = x + v_pred * dt
 ```
 
-Because paths are straight, 30 steps is well enough. Diffusion models need hundreds because their paths are curved.
+Each training path is straight, but the model learns the average velocity over all `(z, y)` pairs passing through `x_t`, so sampling trajectories are curved in general. They are still fairly straight, so 30 Euler steps are enough here.
 
 ---
 

@@ -71,7 +71,7 @@ class DiT(nn.Module):
 
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         B, C, H, W = x.shape
-        t_emb = self.t_embed(t) # B, D
+        t_emb = self.t_embed(t * 1000) # B, D
         x_emb = self.patch_embed(x) # B, D, sqrt(S), sqrt(S)
         x_emb = x_emb.flatten(2).transpose(1, 2) + self.pos_embed # B, S, D
         for block in self.blocks:
