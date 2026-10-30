@@ -2,6 +2,18 @@
 
 Minimal PyTorch implementation of a Diffusion Transformer (DiT) trained with flow matching on `64x64` cat-face images.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/samples_by_epoch_dark.png">
+  <img alt="Grid of cat faces: a row of real images, then generated samples at epochs 0, 10, 20, 50, 100, 150 and 199. Noise at epoch 0 becomes recognizable cat faces by the last epoch." src="assets/samples_by_epoch.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/loss_curve_dark.png">
+  <img alt="Train and validation MSE loss by epoch on a log scale. Train loss falls from 0.62 to 0.078 over 200 epochs; validation loss ends at 0.082." src="assets/loss_curve.png">
+</picture>
+
+Trained with the default settings in `config.py` for 200 epochs (11,800 steps) in about an hour on one RTX 4090.
+
 ## Dataset
 
 The dataset used for this project is available on [Kaggle: larrylizimoccc/catfaces](https://www.kaggle.com/datasets/larrylizimoccc/catfaces/data).
